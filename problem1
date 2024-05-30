@@ -1,0 +1,62 @@
+from flask import Flask, jsonify, request
+import requests
+import time
+
+app = Flask(__name__)
+
+# Configuration
+WINDOW_SIZE = 10
+API_URLS = {
+    'p': 'http://20.244.56.144/test/primes',
+    'f': 'http://20.244.56.144/test/fibo',
+    'e': 'http://20.244.56.144/test/even',
+    'r': 'http://20.244.56.144/test/rand'
+}
+
+# Store numbers in a dictionary to manage different types
+numbers_store = {'p': [], 'f': [], 'e': [], 'r': []}
+
+def fetch_numbers(url):
+    try:
+        response = requests.get(url, timeout=0.5)
+        if response.status_code == 200:
+            return response.json().get('numbers', [])
+    except (requests.exceptions.Timeout, requests.exceptions.RequestException):
+        return []
+
+def calculate_average(numbers):
+    if not numbers:
+        return 0.0
+    return sum(numbers) / len(numbers)
+
+@app.route('/numbers/<type_id>', methods=['GET'])
+def get_numbers(type_id):
+    if type_id not in API_URLS:
+        return jsonify({"error": "Invalid type ID"}), 400
+    
+    prev_state = list(numbers_store[type_id])
+    new_numbers = fetch_numbers(API_URLS[type_id])
+
+    # Update the store with unique values
+    updated_numbers = list({num for num in prev_state + new_numbers})
+
+    # Ensure the numbers list does not exceed the window size
+    if len(updated_numbers) > WINDOW_SIZE:
+        updated_numbers = updated_numbers[-WINDOW_SIZE:]
+    
+    # Update the store with the new state
+    numbers_store[type_id] = updated_numbers
+
+    # Calculate average
+    avg = calculate_average(numbers_store[type_id])
+
+    response = {
+        "windowPrevState": prev_state,
+        "windowCurrState": numbers_store[type_id],
+        "numbers": new_numbers,
+        "avg": round(avg, 2)
+    }
+    return jsonify(response)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=9876)
